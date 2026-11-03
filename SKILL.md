@@ -1,6 +1,6 @@
 ---
 name: auditoria-rendimiento-frontend
-description: Audita el rendimiento frontend de cualquier sitio web con el enfoque "¿esto necesita pasar ahora?" (LCP real, imágenes, terceros, iframes, JS diferido, CLS, accesibilidad, medición antes/después) y lo que Google y los LLM buscan en la página (SEO/AEO: title, headings, TL;DR, FAQs, JSON-LD, dateModified, enlaces internos, robots/llms.txt; integra OpenSEO MCP y seodraft), y entrega un reporte Excel con todos los hallazgos. Usar cuando pidan revisar, auditar o medir el rendimiento, velocidad, performance, SEO o visibilidad en IA de una web o URL.
+description: 'Audita el rendimiento frontend de cualquier sitio web con el enfoque "¿esto necesita pasar ahora?" (LCP real, imágenes, terceros, iframes, JS diferido, CLS, accesibilidad, medición antes/después) y lo que Google y los LLM buscan en la página (SEO/AEO: title, headings, TL;DR, FAQs, JSON-LD, dateModified, enlaces internos, robots/llms.txt; integra OpenSEO MCP y seodraft), y entrega un reporte Excel con todos los hallazgos. Usar cuando pidan revisar, auditar o medir el rendimiento, velocidad, performance, SEO o visibilidad en IA de una web o URL.'
 ---
 
 # Auditoría de rendimiento frontend → reporte Excel

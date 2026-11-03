@@ -9,6 +9,12 @@ Está basada en *Frontend Performance Optimization: A Practical Guide to Faster 
 
 ---
 
+## Instalación
+
+```bash
+npx skills add https://github.com/oscarcornejo/auditoria-rendimiento-frontend --skill auditoria-rendimiento-frontend
+```
+
 ## Qué revisa
 
 | Área | Ejemplos de lo que detecta |

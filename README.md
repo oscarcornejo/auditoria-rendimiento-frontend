@@ -74,16 +74,26 @@ Todos están en `scripts/`; `SKILL.md` los referencia por ruta.
 | `collect_browser.js` | Navegador | Se ejecuta en la página ya cargada y devuelve `{ metricas, recursos, hallazgos }` |
 | `run_collect.js` | Node, `playwright` | Ejecuta `collect_browser.js` emulando un móvil |
 | `url_utils.py` | — | Normalización, slug y plantilla de URLs |
+| `rutas.py` | Python 3 (stdlib) | Crea la carpeta de salida en Documentos e imprime su ruta |
 
 ### Ejemplo: sitio completo
 
 ```bash
-mkdir -p perf-audit/out && cd perf-audit
-python3 ../scripts/discover_urls.py "https://ejemplo.com" --out out/urls.json
-python3 ../scripts/audit_site.py --urls out/urls.json --out out --motor lighthouse
+SKILL_DIR=/ruta/a/auditoria-rendimiento-frontend   # p. ej. .agents/skills/auditoria-rendimiento-frontend
+OUT="$(python3 "$SKILL_DIR/scripts/rutas.py" "https://ejemplo.com")"   # ~/Documents/auditorias-rendimiento/ejemplo.com-AAAA-MM-DD
+python3 "$SKILL_DIR/scripts/discover_urls.py" "https://ejemplo.com" --out "$OUT/urls.json"
+python3 "$SKILL_DIR/scripts/audit_site.py" --urls "$OUT/urls.json" --out "$OUT" --motor lighthouse
 pip install openpyxl
-python3 ../scripts/perf_report_xlsx.py --dir out --sitio "Ejemplo" \
-  --out "out/reporte-rendimiento-ejemplo-$(date +%Y-%m-%d).xlsx"
+python3 "$SKILL_DIR/scripts/perf_report_xlsx.py" --dir "$OUT" --sitio "Ejemplo" \
+  --out "$OUT/reporte-rendimiento-ejemplo-$(date +%Y-%m-%d).xlsx"
+```
+
+Al terminar, el último comando muestra dónde quedó todo:
+
+```
+OK: 48 hallazgos, 120 recursos, 16 informes
+Reporte: /Users/tu-usuario/Documents/auditorias-rendimiento/ejemplo.com-2026-11-03/reporte-rendimiento-ejemplo-2026-11-03.xlsx
+Carpeta de la auditoría: /Users/tu-usuario/Documents/auditorias-rendimiento/ejemplo.com-2026-11-03
 ```
 
 En sitios grandes, `--lighthouse-por-plantilla 3` limita Lighthouse a 3 URLs por plantilla (SEO/AEO sigue en todas) y `--solo-movil` reduce el tiempo a la mitad. Si se corta, repite el comando: reutiliza lo ya medido.
@@ -106,15 +116,15 @@ En sitios grandes, `--lighthouse-por-plantilla 3` limita Lighthouse a 3 URLs por
 ### Ejemplo: una sola URL
 
 ```bash
-mkdir -p out
 URL="https://ejemplo.com"
+OUT="$(python3 "$SKILL_DIR/scripts/rutas.py" "$URL")"
 FLAGS="--headless=new --no-sandbox --disable-gpu --disable-dev-shm-usage"
-npx -y lighthouse "$URL" --output=json --output-path=out/lh-mobile.json  --locale=es --chrome-flags="$FLAGS" --quiet
-npx -y lighthouse "$URL" --output=json --output-path=out/lh-desktop.json --locale=es --preset=desktop --chrome-flags="$FLAGS" --quiet
-node ../scripts/run_collect.js "$URL" out/browser.json   # también escribe out/browser-hallazgos.json
-python3 ../scripts/aeo_site_checks.py "$URL" --out out/aeo.json
-python3 ../scripts/perf_report_xlsx.py --out out/reporte.xlsx out/lh-mobile.json out/lh-desktop.json \
-  --manual out/browser-hallazgos.json out/aeo.json --sitio "Ejemplo"
+npx -y lighthouse "$URL" --output=json --output-path="$OUT"/lh-mobile.json  --locale=es --chrome-flags="$FLAGS" --quiet
+npx -y lighthouse "$URL" --output=json --output-path="$OUT"/lh-desktop.json --locale=es --preset=desktop --chrome-flags="$FLAGS" --quiet
+node "$SKILL_DIR"/scripts/run_collect.js "$URL" "$OUT"/browser.json   # también escribe $OUT/browser-hallazgos.json
+python3 "$SKILL_DIR"/scripts/aeo_site_checks.py "$URL" --out "$OUT"/aeo.json
+python3 "$SKILL_DIR"/scripts/perf_report_xlsx.py --out "$OUT"/reporte.xlsx "$OUT"/lh-mobile.json "$OUT"/lh-desktop.json \
+  --manual "$OUT"/browser-hallazgos.json "$OUT"/aeo.json --sitio "Ejemplo"
 ```
 
 ### Opciones de `perf_report_xlsx.py`
@@ -137,8 +147,19 @@ Acepta cualquier combinación: solo Lighthouse, solo PSI, solo `--manual`, o tod
 
 ### Archivos de salida
 
+Cada auditoría queda en la carpeta **Documentos** del usuario, una carpeta por sitio y fecha. `rutas.py` la crea e imprime su ruta absoluta:
+
+| Sistema | Carpeta |
+|---|---|
+| macOS / Windows | `~/Documents/auditorias-rendimiento/<dominio>-<AAAA-MM-DD>/` |
+| Linux | La carpeta de documentos de XDG (`xdg-user-dir DOCUMENTS`), o `~/Documents` o `~/Documentos` |
+| Otra ubicación | `export AUDITORIA_OUT_BASE=/otra/ruta` → `/otra/ruta/auditorias-rendimiento/…` |
+
+El dominio va sin `www.`; un puerto queda en el nombre (`localhost-3000-2026-11-03`). Repetir la auditoría el mismo día reutiliza la misma carpeta y retoma lo ya medido.
+
 ```
-out/
+<dominio>-<AAAA-MM-DD>/
+├── reporte-rendimiento-<dominio>-<fecha>.xlsx
 ├── urls.json            # URLs descubiertas, plantilla de cada una y URLs excluidas con su motivo
 ├── cobertura.json       # Por URL: estado de cada paso (ok, reutilizado, error, no aplica)
 ├── errores.json         # Pasos que fallaron, con el mensaje
@@ -252,6 +273,7 @@ auditoria-rendimiento-frontend/
 │   ├── reporte_sitio.py     # Hojas de sitio completo
 │   ├── xlsx_estilos.py      # Estilos compartidos del Excel
 │   ├── url_utils.py         # Utilidades de URL
+│   ├── rutas.py             # Carpeta de salida en Documentos
 │   ├── collect_browser.js   # Recolector de señales en el navegador
 │   └── run_collect.js       # Runner de Playwright para collect_browser.js
 └── tests/                   # pytest

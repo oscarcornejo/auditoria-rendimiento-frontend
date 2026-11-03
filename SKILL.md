@@ -31,17 +31,23 @@ separado, para que el Excel diga **en qué URL** está cada problema. `$SKILL_DI
    directamente (la guía recomienda justamente dar esos artefactos a la IA para analizarlos) — no repitas mediciones.
 4. Si hay una medición previa (línea base), pídela: el Excel incluye hoja **Antes vs Después** (`--antes`),
    emparejada por URL y dispositivo.
-5. Todo se guarda en `perf-audit/out` (una subcarpeta por URL en `out/urls/<slug>/`).
+5. Todo se guarda en la carpeta **Documentos** del usuario, una carpeta por sitio y fecha:
+   ```bash
+   OUT="$(python3 "$SKILL_DIR/scripts/rutas.py" "https://dominio.com")"   # crea e imprime la ruta absoluta
+   # → ~/Documents/auditorias-rendimiento/dominio.com-AAAA-MM-DD/   (o ~/Documentos, o la de XDG en Linux)
+   ```
+   En esta guía `out/` significa `$OUT` (con una subcarpeta por URL en `urls/<slug>/`). Si el usuario
+   pide otra ubicación, exporta `AUDITORIA_OUT_BASE=/otra/ruta` antes de llamar a `rutas.py`.
 
 ## 2. Medir primero, no optimizar (§1 de la guía)
 
 ### Vía 0 — Sitio completo (por defecto)
 ```bash
-mkdir -p out
-python3 "$SKILL_DIR/scripts/discover_urls.py" "https://dominio.com" --out out/urls.json
-python3 "$SKILL_DIR/scripts/audit_site.py" --urls out/urls.json --out out --motor lighthouse
-python3 "$SKILL_DIR/scripts/perf_report_xlsx.py" --dir out --sitio "<Nombre>" \
-  --out "out/reporte-rendimiento-<dominio>-$(date +%Y-%m-%d).xlsx"
+OUT="$(python3 "$SKILL_DIR/scripts/rutas.py" "https://dominio.com")"
+python3 "$SKILL_DIR/scripts/discover_urls.py" "https://dominio.com" --out "$OUT"/urls.json
+python3 "$SKILL_DIR/scripts/audit_site.py" --urls "$OUT"/urls.json --out "$OUT" --motor lighthouse
+python3 "$SKILL_DIR/scripts/perf_report_xlsx.py" --dir "$OUT" --sitio "<Nombre>" \
+  --out "$OUT/reporte-rendimiento-<dominio>-$(date +%Y-%m-%d).xlsx"
 ```
 1. **Descubrimiento** (`discover_urls.py`): lee `robots.txt` → sitemaps (índices y `.gz` incluidos); si no hay
    sitemap, rastrea enlaces internos desde la home respetando `robots.txt`. Normaliza y deduplica (barra
@@ -72,16 +78,16 @@ complementa con las vías siguientes. Las vías A–E describen cada medición p
 ```bash
 export CHROME_PATH=$(node -e "console.log(require('playwright').chromium.executablePath())" 2>/dev/null || which google-chrome chromium chromium-browser | head -1)
 FLAGS="--headless=new --no-sandbox --disable-gpu --disable-dev-shm-usage"
-npx -y lighthouse "$URL" --output=json --output-path=out/lh-mobile.json  --locale=es --chrome-flags="$FLAGS" --quiet
-npx -y lighthouse "$URL" --output=json --output-path=out/lh-desktop.json --locale=es --preset=desktop --chrome-flags="$FLAGS" --quiet
+npx -y lighthouse "$URL" --output=json --output-path="$OUT"/lh-mobile.json  --locale=es --chrome-flags="$FLAGS" --quiet
+npx -y lighthouse "$URL" --output=json --output-path="$OUT"/lh-desktop.json --locale=es --preset=desktop --chrome-flags="$FLAGS" --quiet
 ```
 - Varias URLs: usa la Vía 0 (`audit_site.py`), que guarda `out/urls/<slug>/lh-mobile.json`. Si hay tiempo, 3 corridas móviles y conserva la mediana.
 - Error "interstitial" / 403 del proxy = la red del entorno bloquea el sitio → Vía B o C. Sin Chrome → B o C.
 
 ### Vía B — API de PageSpeed Insights (sin Chrome; añade datos de campo CrUX con INP real)
 ```bash
-curl -s "https://www.googleapis.com/pagespeedonline/v5/runPagespeed?url=$URL&strategy=mobile&category=performance&category=accessibility&category=best-practices&category=seo&locale=es" -o out/psi-mobile.json
-curl -s "https://www.googleapis.com/pagespeedonline/v5/runPagespeed?url=$URL&strategy=desktop&category=performance&locale=es" -o out/psi-desktop.json
+curl -s "https://www.googleapis.com/pagespeedonline/v5/runPagespeed?url=$URL&strategy=mobile&category=performance&category=accessibility&category=best-practices&category=seo&locale=es" -o "$OUT"/psi-mobile.json
+curl -s "https://www.googleapis.com/pagespeedonline/v5/runPagespeed?url=$URL&strategy=desktop&category=performance&locale=es" -o "$OUT"/psi-desktop.json
 ```
 El generador acepta estos JSON tal cual. Si la API no está permitida en el entorno, pide al usuario el JSON
 (DevTools → Lighthouse → "Save as JSON", o pagespeed.web.dev).
@@ -104,7 +110,7 @@ inicial, botones de solo ícono sin nombre, `aria-label` redundantes y falta de 
 
 ### Vía E — SEO/AEO: `aeo_site_checks.py` (siempre) + OpenSEO MCP y seodraft (si existen)
 ```bash
-python3 "$SKILL_DIR/scripts/aeo_site_checks.py" "$URL" --out out/aeo.json   # solo stdlib
+python3 "$SKILL_DIR/scripts/aeo_site_checks.py" "$URL" --out "$OUT"/aeo.json   # solo stdlib
 ```
 Aplica a la página servida las reglas de seodraft (title 15–60, description 50–160, un H1 sin
 saltos, ≥ 2 enlaces internos, alt, thin content, TL;DR, FAQs/FAQPage, answer-first, JSON-LD con
@@ -166,12 +172,12 @@ hallazgo "Medio" de esfuerzo "Bajo" es un quick win y va antes que un "Alto" de 
 
 ```bash
 python3 -c "import openpyxl" 2>/dev/null || pip install openpyxl --break-system-packages -q
-# Sitio completo (Vía 0): toma todo lo que hay en out/
-python3 "$SKILL_DIR/scripts/perf_report_xlsx.py" --dir out --sitio "<Nombre del sitio>" \
-  --out "out/reporte-rendimiento-<dominio>-$(date +%Y-%m-%d).xlsx" [--manual out/manual.json] [--antes out/lh-base-*.json]
+# Sitio completo (Vía 0): toma todo lo que hay en $OUT
+python3 "$SKILL_DIR/scripts/perf_report_xlsx.py" --dir "$OUT" --sitio "<Nombre del sitio>" \
+  --out "$OUT/reporte-rendimiento-<dominio>-$(date +%Y-%m-%d).xlsx" [--manual "$OUT"/manual.json] [--antes "$OUT"/lh-base-*.json]
 # Una URL o archivos sueltos
-python3 "$SKILL_DIR/scripts/perf_report_xlsx.py" --out out/reporte.xlsx out/lh-mobile.json out/lh-desktop.json \
-  --manual out/manual.json out/browser-hallazgos.json out/aeo.json [--seodraft out/seodraft-audit.json] --sitio "<Nombre>"
+python3 "$SKILL_DIR/scripts/perf_report_xlsx.py" --out "$OUT"/reporte.xlsx "$OUT"/lh-mobile.json "$OUT"/lh-desktop.json \
+  --manual "$OUT"/manual.json "$OUT"/browser-hallazgos.json "$OUT"/aeo.json [--seodraft "$OUT"/seodraft-audit.json] --sitio "<Nombre>"
 ```
 - `--dir` lee `urls.json`, `cobertura.json`, `crosscheck.json`, `sitio-aeo.json`, `manual.json` y cada
   `urls/<slug>/` (Lighthouse/PSI, `aeo.json`, `browser-hallazgos.json`), asignando la URL por carpeta.
@@ -185,18 +191,22 @@ python3 "$SKILL_DIR/scripts/perf_report_xlsx.py" --out out/reporte.xlsx out/lh-m
   **Checklist por URL** (matriz URL × punto) · **Cobertura** (qué se midió en cada URL y qué URLs se excluyeron y por qué).
 - En **Checklist**, completa a mano los "Revisar manualmente" con lo observado en §3 (columna Evidencia).
 - Verifica con openpyxl: hallazgos > 0, CWV con valores, sin filas vacías, y que **Cobertura** no tenga
-  pasos en error sin explicar. Entrega con `SendUserFile`.
+  pasos en error sin explicar. Entrega con `SendUserFile` si está disponible.
+- Al terminar, `perf_report_xlsx.py` imprime las rutas absolutas (`Reporte: …` y `Carpeta de la auditoría: …`):
+  cópialas tal cual al cierre del chat.
 
 ## 6. Cierre en el chat (breve)
 
-1. Alcance real: URLs descubiertas, auditadas y excluidas (y si Lighthouse fue a todas o por plantilla).
-2. Estado de LCP / CLS / TBT-INP por dispositivo **por plantilla** y cuál es el elemento LCP real en cada una.
+1. **Ubicación de la entrega**: ruta absoluta del Excel y de la carpeta de la auditoría (JSON por URL,
+   `cobertura.json`, `crosscheck.json`), tal como las imprimió `perf_report_xlsx.py`.
+2. Alcance real: URLs descubiertas, auditadas y excluidas (y si Lighthouse fue a todas o por plantilla).
+3. Estado de LCP / CLS / TBT-INP por dispositivo **por plantilla** y cuál es el elemento LCP real en cada una.
    Y en una línea el estado SEO/AEO: ¿las páginas son citables? (TL;DR, FAQs, JSON-LD con dateModified, rastreable por bots de IA).
-3. Las **10 peores URLs** (hoja Por URL) y los patrones que se repiten en más URLs (hoja Patrones): ahí está el mayor retorno.
-4. Qué está compitiendo con la primera experiencia significativa (3-5 hallazgos prioritarios con ahorro estimado).
-5. Quick wins (bajo esfuerzo, alto impacto) vs. trabajo estructural, con la advertencia de la guía: cambiar
+4. Las **10 peores URLs** (hoja Por URL) y los patrones que se repiten en más URLs (hoja Patrones): ahí está el mayor retorno.
+5. Qué está compitiendo con la primera experiencia significativa (3-5 hallazgos prioritarios con ahorro estimado).
+6. Quick wins (bajo esfuerzo, alto impacto) vs. trabajo estructural, con la advertencia de la guía: cambiar
    **una cosa significativa a la vez, volver a medir, y revertir si no mejora**.
-6. Laboratorio ≠ campo; INP solo con usuarios reales; variación entre corridas.
+7. Laboratorio ≠ campo; INP solo con usuarios reales; variación entre corridas.
 
 ## Errores frecuentes a evitar
 - Recomendar `loading="lazy"` o `fetchpriority="high"` en bloque: la guía insiste en priorizar **una** imagen (la LCP).
@@ -220,5 +230,6 @@ python3 "$SKILL_DIR/scripts/perf_report_xlsx.py" --out out/reporte.xlsx out/lh-m
 | `collect_browser.js` / `run_collect.js` | Recolector en navegador de los checks de la guía (Playwright) |
 | `perf_report_xlsx.py` | Genera el Excel (con `reporte_sitio.py` y `xlsx_estilos.py` para las hojas de sitio) |
 | `url_utils.py` | Normalización, clave de unión, slug y plantilla de URLs |
+| `rutas.py` | Carpeta de salida en Documentos: `auditorias-rendimiento/<dominio>-<fecha>/` |
 
 Requisitos: Python 3.9+ con `openpyxl`; Node + `npx lighthouse` para Lighthouse; `playwright` para `--browser`.

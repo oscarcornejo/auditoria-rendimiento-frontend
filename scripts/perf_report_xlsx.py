@@ -17,6 +17,7 @@ Uso:
   python3 perf_report_xlsx.py --out reporte.xlsx --dir out [--sitio "Nombre"]
 """
 import argparse, json, datetime, re, sys
+from pathlib import Path
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment
 from openpyxl.utils import get_column_letter
@@ -565,5 +566,9 @@ if __name__ == "__main__":
     if not informes and not manuales:
         sys.exit("No hay informes ni hallazgos válidos para generar el reporte.")
     contexto = {k: d[k] for k in ("urls", "cobertura", "crosscheck")} if a.dir else None
+    Path(a.out).parent.mkdir(parents=True, exist_ok=True)
     n_h, n_r = construir(informes, manuales, a.out, a.sitio, antes=cargar_informes((p, None) for p in a.antes), contexto=contexto)
-    print(f"OK → {a.out}: {n_h} hallazgos, {n_r} recursos, {len(informes)} informes")
+    print(f"OK: {n_h} hallazgos, {n_r} recursos, {len(informes)} informes")
+    print(f"Reporte: {Path(a.out).resolve()}")
+    if a.dir:
+        print(f"Carpeta de la auditoría: {Path(a.dir).resolve()}")

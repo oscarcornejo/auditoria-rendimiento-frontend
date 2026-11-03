@@ -22,6 +22,7 @@ import json
 import re
 import sys
 import zlib
+from pathlib import Path
 from collections import deque
 from html.parser import HTMLParser
 from urllib.error import HTTPError, URLError
@@ -239,6 +240,7 @@ def main():
         sys.exit(f"URL no válida: {a.url}")
     r = descubrir(f"{p.scheme}://{p.netloc}", max_urls=a.max, include=a.include, exclude=a.exclude,
                   crawl_depth=a.crawl_depth, max_crawl=a.max_crawl)
+    Path(a.out).parent.mkdir(parents=True, exist_ok=True)
     with open(a.out, "w", encoding="utf-8") as f:
         json.dump(r, f, ensure_ascii=False, indent=2)
     if r["total"] > AVISO_MUCHAS_URLS:

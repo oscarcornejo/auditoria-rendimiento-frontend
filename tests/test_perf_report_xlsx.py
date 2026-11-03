@@ -132,3 +132,20 @@ class TestConstruirEnProceso:
         (tmp_path / "m.json").write_text("{roto")
         assert cargar_manuales([(tmp_path / "m.json", None)]) == []
         assert "se omite" in capsys.readouterr().err
+
+
+class TestUbicacion:
+    def test_al_terminar_muestra_rutas_absolutas_del_reporte_y_la_carpeta(self, carpeta):
+        r = subprocess.run([sys.executable, str(SCRIPT), "--out", str(carpeta / "r.xlsx"), "--dir", str(carpeta)],
+                           capture_output=True, text=True)
+        assert r.returncode == 0, r.stderr
+        assert f"Reporte: {(carpeta / 'r.xlsx').resolve()}" in r.stdout
+        assert f"Carpeta de la auditoría: {carpeta.resolve()}" in r.stdout
+
+    def test_crea_la_carpeta_del_reporte_si_no_existe(self, tmp_path):
+        escribir(tmp_path / "lh.json", lh_json(A))
+        destino = tmp_path / "nueva" / "r.xlsx"
+        r = subprocess.run([sys.executable, str(SCRIPT), "--out", str(destino), str(tmp_path / "lh.json")],
+                           capture_output=True, text=True)
+        assert r.returncode == 0, r.stderr
+        assert destino.exists()

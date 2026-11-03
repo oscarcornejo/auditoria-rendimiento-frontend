@@ -1,4 +1,5 @@
 import gzip
+import sys
 
 import pytest
 
@@ -185,3 +186,14 @@ class TestSeguridad:
 
     def test_enlace_malformado_no_aborta(self):
         assert extraer_enlaces('<a href="http://[bad">x</a><a href="/ok">ok</a>', "https://e.com/") == ["https://e.com/ok"]
+
+
+class TestCli:
+    def test_crea_la_carpeta_de_salida(self, tmp_path, monkeypatch):
+        import discover_urls
+        monkeypatch.setattr(discover_urls, "descubrir", lambda *a, **k: {"fuente": "sitemap", "total": 0, "omitidas_por_max": 0,
+                                                                          "excluidas": [], "urls": []})
+        destino = tmp_path / "a" / "b" / "urls.json"
+        monkeypatch.setattr(sys, "argv", ["discover_urls.py", "https://e.com", "--out", str(destino)])
+        discover_urls.main()
+        assert destino.exists()

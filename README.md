@@ -23,6 +23,7 @@ Está basada en *Frontend Performance Optimization: A Practical Guide to Faster 
 | **Accesibilidad** | Botones de solo ícono sin nombre, `aria-label` redundantes, falta de `prefers-reduced-motion` |
 | **SEO** | Title (15–60), description (50–160), un solo H1, enlaces internos, `alt`, canonical, noindex, `lang`, Open Graph |
 | **AEO** | TL;DR, FAQs con FAQPage, *answer-first*, JSON-LD con `author`/`dateModified`, frescura, `robots.txt` para bots de IA, `llms.txt`, `sitemap.xml` |
+| **Entre URLs** | Title, description y H1 duplicados; URLs del sitemap con error, redirección o `noindex`; canonical externo o roto; enlaces internos rotos; páginas huérfanas |
 
 Umbrales usados: **LCP ≤ 2,5 s · INP ≤ 200 ms · CLS ≤ 0,1 · TBT ≤ 200 ms · TTFB ≤ 0,8 s**.
 
@@ -34,60 +35,80 @@ La skill se activa cuando le pides a Claude revisar, auditar o medir el rendimie
 Audita el rendimiento de https://ejemplo.com
 ¿Por qué es lenta la home de mi tienda? https://tienda.cl
 Revisa si mi blog es citable por ChatGPT y Perplexity: https://blog.ejemplo.com/articulo
+Audita todo ejemplo.com, pero Lighthouse solo en 3 URLs por plantilla
+Audita solo las URLs de /blog/ de https://ejemplo.com
 ```
 
-Si solo das el dominio, audita como mínimo la home, un listado o categoría, un detalle (producto o artículo) y un formulario o checkout si lo hay. Mide en **móvil y escritorio**.
+Por defecto la auditoría es **completa**: descubre todas las URLs del sitio (sitemap o rastreo) y revisa cada una, así el reporte dice **en qué URL** está cada problema. También detecta problemas *entre* URLs (títulos duplicados, enlaces rotos, páginas huérfanas). Si pides una sola página, audita solo esa. Mide en **móvil y escritorio**.
 
 Si ya tienes artefactos (JSON de Lighthouse o PageSpeed Insights, trazas de DevTools, un HAR), pásaselos: la skill los usa directamente y no repite las mediciones. Si además entregas una medición previa, el reporte incluye la hoja **Antes vs Después**.
 
 ## Flujo
 
-1. **Medir primero.** Usa la primera vía que funcione:
-   - **A. Lighthouse CLI** (la preferida): laboratorio completo, en móvil y escritorio.
-   - **B. API de PageSpeed Insights**: no necesita Chrome y añade datos de campo de CrUX (con INP real).
-   - **C. Recolector en navegador** (`collect_browser.js`): comprobaciones de la guía que Lighthouse no reporta. Se ejecuta con Claude in Chrome, Playwright o DevTools, y se usa *también* cuando hay Lighthouse.
-   - **D. Revisión estática**: cabeceras y HTML con `curl`, como último recurso.
-   - **E. SEO/AEO** (`aeo_site_checks.py`): corre siempre, una vez por URL.
-2. **Revisión guiada.** Para cada punto de la guía responde *¿qué compite con la primera experiencia significativa del usuario?*
-3. **Clasificar** cada hallazgo con la rúbrica de severidad y una estimación honesta del esfuerzo.
-4. **Generar el Excel** con `perf_report_xlsx.py`.
-5. **Cierre breve en el chat**: estado de los CWV, elemento LCP real, si la página es citable, los 3-5 hallazgos prioritarios y los *quick wins*.
+1. **Descubrir** (`discover_urls.py`): `robots.txt` → sitemaps → rastreo de enlaces internos si no hay sitemap. Normaliza, deduplica y agrupa las URLs por plantilla (`/blog/*`).
+2. **Auditar cada URL** (`audit_site.py`): SEO/AEO en todas las URLs, Lighthouse (o PSI) móvil y escritorio y, opcionalmente, el recolector en navegador. Es reanudable y deja un registro de cobertura por URL.
+3. **Cruzar URLs** (`site_crosscheck.py`): duplicados de title/description/H1, sitemap con errores o redirecciones, canonical roto, enlaces internos rotos y páginas huérfanas.
+4. **Revisión guiada**, una URL representativa por plantilla: *¿qué compite con la primera experiencia significativa del usuario?*
+5. **Generar el Excel** con `perf_report_xlsx.py --dir`.
+6. **Cierre breve en el chat**: alcance, CWV por plantilla, las 10 peores URLs, los patrones repetidos y los *quick wins*.
+
+Para una sola URL siguen disponibles las vías sueltas: **A.** Lighthouse CLI · **B.** API de PageSpeed Insights · **C.** recolector en navegador (`collect_browser.js`) · **D.** revisión estática con `curl` · **E.** SEO/AEO (`aeo_site_checks.py`).
 
 ## Scripts
 
-Los scripts están en `scripts/`. También van embebidos en `SKILL.md` para que la skill funcione aunque solo se cargue ese archivo.
+Todos están en `scripts/`; `SKILL.md` los referencia por ruta.
 
 | Script | Requisitos | Uso |
 |---|---|---|
-| `perf_report_xlsx.py` | Python 3, `openpyxl` | Genera el reporte Excel |
+| `discover_urls.py` | Python 3 (stdlib) | Descubre las URLs del sitio → `urls.json` |
+| `audit_site.py` | Python 3; Node + `npx lighthouse` para `--motor lighthouse` | Audita todas las URLs → `urls/<slug>/`, `cobertura.json` |
+| `site_crosscheck.py` | Python 3 (stdlib) | Problemas entre URLs → `crosscheck.json` |
+| `aeo_site_checks.py` | Python 3 (stdlib) | Comprobaciones SEO/AEO de una página y del sitio |
+| `perf_report_xlsx.py` | Python 3, `openpyxl` | Genera el reporte Excel (usa `reporte_sitio.py` y `xlsx_estilos.py`) |
 | `collect_browser.js` | Navegador | Se ejecuta en la página ya cargada y devuelve `{ metricas, recursos, hallazgos }` |
 | `run_collect.js` | Node, `playwright` | Ejecuta `collect_browser.js` emulando un móvil |
-| `aeo_site_checks.py` | Python 3 (solo stdlib) | Comprobaciones SEO/AEO sobre la URL servida |
+| `url_utils.py` | — | Normalización, slug y plantilla de URLs |
 
-### Ejemplo de ejecución manual
+### Ejemplo: sitio completo
 
 ```bash
 mkdir -p perf-audit/out && cd perf-audit
-URL="https://ejemplo.com"
+python3 ../scripts/discover_urls.py "https://ejemplo.com" --out out/urls.json
+python3 ../scripts/audit_site.py --urls out/urls.json --out out --motor lighthouse
+pip install openpyxl
+python3 ../scripts/perf_report_xlsx.py --dir out --sitio "Ejemplo" \
+  --out "out/reporte-rendimiento-ejemplo-$(date +%Y-%m-%d).xlsx"
+```
 
-# A. Lighthouse
+En sitios grandes, `--lighthouse-por-plantilla 3` limita Lighthouse a 3 URLs por plantilla (SEO/AEO sigue en todas) y `--solo-movil` reduce el tiempo a la mitad. Si se corta, repite el comando: reutiliza lo ya medido.
+
+### Opciones de `discover_urls.py` y `audit_site.py`
+
+| Script | Opción | Descripción |
+|---|---|---|
+| `discover_urls.py` | `--max N` | Tope de URLs (por defecto todas) |
+| | `--include` / `--exclude` | Regex para filtrar URLs |
+| | `--crawl-depth`, `--max-crawl` | Límites del rastreo cuando no hay sitemap |
+| `audit_site.py` | `--motor lighthouse\|psi\|ninguno` | Medición de laboratorio por URL (PSI usa `PSI_API_KEY` si existe) |
+| | `--lighthouse-por-plantilla N` | Lighthouse/PSI solo en N URLs por plantilla (0 = todas) |
+| | `--solo-movil` | Lighthouse/PSI solo en móvil |
+| | `--browser` | Recolector Playwright en cada URL |
+| | `--concurrency N` | Checks HTTP en paralelo (Lighthouse siempre en serie) |
+| | `--verificar-enlaces N` | Comprueba por HTTP hasta N enlaces internos fuera del sitemap |
+| | `--sin-crosscheck` | No ejecutar `site_crosscheck.py` |
+
+### Ejemplo: una sola URL
+
+```bash
+mkdir -p out
+URL="https://ejemplo.com"
 FLAGS="--headless=new --no-sandbox --disable-gpu --disable-dev-shm-usage"
 npx -y lighthouse "$URL" --output=json --output-path=out/lh-mobile.json  --locale=es --chrome-flags="$FLAGS" --quiet
 npx -y lighthouse "$URL" --output=json --output-path=out/lh-desktop.json --locale=es --preset=desktop --chrome-flags="$FLAGS" --quiet
-
-# C. Recolector en navegador (Playwright)
 node ../scripts/run_collect.js "$URL" out/browser.json   # también escribe out/browser-hallazgos.json
-
-# E. SEO/AEO
 python3 ../scripts/aeo_site_checks.py "$URL" --out out/aeo.json
-
-# Reporte
-pip install openpyxl
-python3 ../scripts/perf_report_xlsx.py \
-  --out "out/reporte-rendimiento-ejemplo-$(date +%Y-%m-%d).xlsx" \
-  out/lh-mobile.json out/lh-desktop.json \
-  --manual out/browser-hallazgos.json out/aeo.json \
-  --sitio "Ejemplo"
+python3 ../scripts/perf_report_xlsx.py --out out/reporte.xlsx out/lh-mobile.json out/lh-desktop.json \
+  --manual out/browser-hallazgos.json out/aeo.json --sitio "Ejemplo"
 ```
 
 ### Opciones de `perf_report_xlsx.py`
@@ -97,7 +118,8 @@ python3 ../scripts/perf_report_xlsx.py \
 | `informes...` | JSON de Lighthouse o de PageSpeed Insights (posicionales, en cualquier cantidad) |
 | `--manual` | Uno o más JSON de hallazgos (una lista, o `{ "hallazgos": [...] }`). Se fusionan |
 | `--seodraft` | Salida de `seodraft audit` o `seodraft gate`: los *failures* quedan como Alto y los *advisories* AEO como Medio |
-| `--antes` | JSON de Lighthouse de la línea base; genera la hoja **Antes vs Después** |
+| `--dir` | Carpeta de `audit_site.py`: toma todos sus JSON y añade las hojas de sitio completo |
+| `--antes` | JSON de Lighthouse de la línea base; genera la hoja **Antes vs Después** (emparejada por URL y dispositivo) |
 | `--sitio` | Nombre del sitio para el encabezado del reporte |
 | `--out` | Ruta del `.xlsx` (por defecto `reporte-rendimiento.xlsx`) |
 
@@ -105,19 +127,49 @@ Acepta cualquier combinación: solo Lighthouse, solo PSI, solo `--manual`, o tod
 
 ### Opciones de `aeo_site_checks.py`
 
-`--out` (por defecto `hallazgos-aeo.json`), `--min-words` (500), `--title-max` (60), `--desc-max` (160), `--internal-links-min` (2).
+`--out` (por defecto `hallazgos-aeo.json`), `--min-words` (500), `--title-max` (60), `--desc-max` (160), `--internal-links-min` (2), `--sin-checks-sitio` (solo la página) y `--solo-sitio` (solo robots.txt, llms.txt y sitemap).
+
+### Archivos de salida
+
+```
+out/
+├── urls.json            # URLs descubiertas, plantilla de cada una y URLs excluidas con su motivo
+├── cobertura.json       # Por URL: estado de cada paso (ok, reutilizado, error, no aplica)
+├── errores.json         # Pasos que fallaron, con el mensaje
+├── sitio-aeo.json       # robots.txt, llms.txt y sitemap (una vez por sitio)
+├── crosscheck.json      # Problemas entre URLs
+├── manual.json          # Hallazgos de la revisión guiada (opcional, lo escribe Claude)
+└── urls/<slug>/         # Una carpeta por URL
+    ├── aeo.json
+    ├── lh-mobile.json  lh-desktop.json     # o psi-mobile.json / psi-desktop.json
+    └── browser.json  browser-hallazgos.json  # con --browser
+```
+
+El `<slug>` combina el path legible con un hash corto de la URL, así dos URLs nunca comparten carpeta.
+
+### Cómo identifica cada URL
+
+- Se consideran **la misma página**: con y sin barra final, `http` y `https`, con y sin `www.`, host en mayúsculas, y con o sin parámetros de tracking (`utm_*`, `gclid`, `fbclid`…) o fragmento (`#…`).
+- En el rastreo, si una URL redirige, se registra la URL final y sus enlaces relativos se resuelven contra ella.
+- Solo se audita el mismo sitio (con o sin `www.`). Se descartan otros dominios y archivos que no son HTML (PDF, imágenes, assets), y quedan listados en `urls.json` → `excluidas`.
+- Por seguridad, solo se leen sitemaps `http(s)` del mismo sitio: un sitemap o un `robots.txt` no puede hacer que se pidan archivos locales, IPs internas u otros dominios. Un sitemap alojado en otro host (por ejemplo, un CDN) no se lee; en ese caso el descubrimiento pasa al rastreo.
 
 ## El reporte Excel
 
 | Hoja | Contenido |
 |---|---|
-| **Resumen** | URLs, puntajes, conteo por severidad y top 10 |
+| **Resumen** | URLs, puntajes, conteo por severidad y top 10 (con su URL) |
 | **Core Web Vitals** | Laboratorio y campo, con semáforo |
-| **Hallazgos** | ID, área, severidad, prioridad, ahorro en ms/KB, descripción, recomendación, esfuerzo, estado y responsable (con filtros) |
+| **Hallazgos** | Una fila por URL y problema (los de sitio llevan el prefijo "(sitio)"): ID, área, severidad, prioridad, ahorro en ms/KB, descripción, recomendación, esfuerzo, estado y responsable (con filtros) |
 | **Detalle** | Recursos y elementos afectados por cada hallazgo |
 | **Recursos** | Peticiones por peso, protocolo y prioridad |
-| **Checklist** | Puntos de la guía, incluida la sección SEO/AEO, marcados como Cumple, No cumple o Revisar manualmente |
+| **Checklist** | Puntos de la guía, incluida la sección SEO/AEO, marcados como Cumple, No cumple o Revisar manualmente, con cuántas URLs no cumplen |
 | **Antes vs Después** | Solo si se pasa `--antes` |
+| **Por URL** | Severidades, puntaje y LCP de cada URL, peores primero, y pasos que fallaron *(varias URLs)* |
+| **Por plantilla** | Agregado por plantilla: puntaje medio, hallazgos por URL y la peor URL *(varias URLs)* |
+| **Patrones** | El mismo problema en muchas URLs, con % afectado: candidatos a arreglo de plantilla *(varias URLs)* |
+| **Checklist por URL** | Matriz URL × punto de la guía *(varias URLs)* |
+| **Cobertura** | Qué se midió en cada URL y qué URLs se excluyeron y por qué *(varias URLs)* |
 
 ## Formato de hallazgos manuales
 
@@ -158,6 +210,16 @@ Un hallazgo Medio con esfuerzo Bajo es un *quick win* y va antes que uno Alto co
 - **OpenSEO MCP**: si está conectado, aporta lo que no se ve desde fuera: Site Audit completo, Search Console (CTR, impresiones, consultas en página 2), visibilidad de la marca en ChatGPT y AI Overviews, y keywords. La skill avisa antes de lanzar consultas de pago a DataForSEO.
 - **seodraft**: si el repositorio de contenido tiene `.seodraft/config.json`, la salida de `seodraft audit` se importa con `--seodraft`. Para escribir o refrescar contenido, la skill remite a `/seodraft write` y `/seodraft audit`.
 
+## Limitaciones conocidas
+
+- Con `--include`, si la home no coincide con el filtro y el sitio no tiene sitemap, el rastreo no avanza y devuelve 0 URLs.
+- Si un sitemap falla (error de red o XML inválido), el descubrimiento pasa al rastreo sin avisar; revisa `fuente` en `urls.json`.
+- En auditorías parciales (`--max`, `--include`/`--exclude`), una página enlazada solo desde URLs no auditadas puede salir como huérfana, y un canonical a una URL no auditada como "externo".
+- Las descargas tienen timeout por operación, no un plazo total: un servidor que responde muy lento puede alargar mucho el descubrimiento.
+- Con `--motor psi`, `PSI_API_KEY` se pasa a `curl` como argumento y es visible en la lista de procesos.
+- Lighthouse se ejecuta con `npx -y lighthouse` (sin versión fija) y Chrome con `--no-sandbox`: audita sitios de terceros en un entorno aislado.
+- Laboratorio ≠ campo: Lighthouse mide en un entorno simulado; el INP real requiere datos de usuarios (PSI/CrUX).
+
 ## Principios
 
 - Priorizar **una** imagen (la LCP), no aplicar `lazy` ni `fetchpriority` en bloque.
@@ -172,11 +234,28 @@ Un hallazgo Medio con esfuerzo Bajo es un *quick win* y va antes que uno Alto co
 
 ```
 auditoria-rendimiento-frontend/
-├── SKILL.md                 # Instrucciones de la skill (incluye los scripts embebidos)
+├── SKILL.md                 # Instrucciones de la skill
 ├── README.md
-└── scripts/
-    ├── perf_report_xlsx.py  # Generador del reporte Excel
-    ├── collect_browser.js   # Recolector de señales en el navegador
-    ├── run_collect.js       # Runner de Playwright para collect_browser.js
-    └── aeo_site_checks.py   # Comprobaciones SEO/AEO
+├── requirements-dev.txt     # Dependencias para tests
+├── scripts/
+│   ├── discover_urls.py     # Descubrimiento de URLs
+│   ├── audit_site.py        # Orquestador de la auditoría del sitio
+│   ├── site_crosscheck.py   # Problemas entre URLs
+│   ├── aeo_site_checks.py   # Comprobaciones SEO/AEO
+│   ├── perf_report_xlsx.py  # Generador del reporte Excel
+│   ├── reporte_sitio.py     # Hojas de sitio completo
+│   ├── xlsx_estilos.py      # Estilos compartidos del Excel
+│   ├── url_utils.py         # Utilidades de URL
+│   ├── collect_browser.js   # Recolector de señales en el navegador
+│   └── run_collect.js       # Runner de Playwright para collect_browser.js
+└── tests/                   # pytest
 ```
+
+## Desarrollo
+
+```bash
+python3 -m venv .venv && .venv/bin/pip install -r requirements-dev.txt
+.venv/bin/python -m pytest -q tests/ --cov=scripts
+```
+
+Los tests no hacen peticiones de red: `fetch`, `get` y el ejecutor de subprocesos se inyectan como dobles. La cobertura mínima es 80% por módulo.
